@@ -24,12 +24,23 @@ class Directory:
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._connection = sqlite3.connect(path)
         try:
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS listings ("
-                "service_id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, "
-                "area TEXT NOT NULL, category TEXT NOT NULL)"
-            )
-            self._connection.commit()
+            with self._connection:
+                self._connection.execute("BEGIN IMMEDIATE")
+                version = self._connection.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (0, 1):
+                    raise ValueError("unsupported database schema version")
+                if version == 0:
+                    self._connection.execute(
+                        "CREATE TABLE IF NOT EXISTS listings ("
+                        "service_id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, "
+                        "area TEXT NOT NULL, category TEXT NOT NULL)"
+                    )
+                    self._connection.execute(
+                        "ALTER TABLE listings ADD COLUMN state TEXT NOT NULL "
+                        "DEFAULT 'draft' CHECK "
+                        "(state IN ('draft', 'published', 'archived'))"
+                    )
+                    self._connection.execute("PRAGMA user_version = 1")
         except Exception:
             self._connection.close()
             raise
@@ -49,11 +60,40 @@ class Directory:
         try:
             with self._connection:
                 self._connection.execute(
-                    "INSERT INTO listings VALUES (?, ?, ?, ?)",
+                    "INSERT INTO listings (service_id, name, area, category) "
+                    "VALUES (?, ?, ?, ?)",
                     (listing.service_id, listing.name, listing.area, listing.category),
                 )
         except sqlite3.IntegrityError as error:
             raise ValueError("service_id already exists") from error
+
+    def state(self, service_id: str) -> str:
+        if not isinstance(service_id, str) or not service_id.strip():
+            raise ValueError("service_id must be nonempty text")
+        row = self._connection.execute(
+            "SELECT state FROM listings WHERE service_id = ?", (service_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError("unknown service_id")
+        return row[0]
+
+    def transition(self, service_id: str, target: str) -> None:
+        allowed = {
+            "draft": {"published", "archived"},
+            "published": {"archived"},
+            "archived": {"draft"},
+        }
+        if not isinstance(target, str) or target not in allowed:
+            raise ValueError("invalid publication state")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            current = self.state(service_id)
+            if target not in allowed[current]:
+                raise ValueError(f"cannot change {current} to {target}")
+            self._connection.execute(
+                "UPDATE listings SET state = ? WHERE service_id = ?",
+                (target, service_id),
+            )
 
     def search(
         self,
@@ -74,7 +114,7 @@ class Directory:
                 raise ValueError("filters must be nonempty text up to 200 characters")
         rows = self._connection.execute(
             "SELECT service_id, name, area, category FROM listings "
-            "WHERE (? IS NULL OR area = ? COLLATE NOCASE) "
+            "WHERE state = 'published' AND (? IS NULL OR area = ? COLLATE NOCASE) "
             "AND (? IS NULL OR category = ? COLLATE NOCASE) "
             "ORDER BY name COLLATE NOCASE, service_id LIMIT ? OFFSET ?",
             (

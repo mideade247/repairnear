@@ -16,6 +16,9 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--category")
     search.add_argument("--limit", type=int, default=20)
     search.add_argument("--offset", type=int, default=0)
+    for command in ("publish", "archive", "restore", "status"):
+        action = commands.add_parser(command)
+        action.add_argument("service_id")
     args = parser.parse_args(argv)
     try:
         with Directory(
@@ -35,14 +38,33 @@ def main(argv: list[str] | None = None) -> int:
                         "furniture",
                     )
                 )
+                store.transition("demo-1", "published")
+                store.transition("demo-2", "published")
                 results = store.search()
-            else:
+            elif args.command == "search":
                 results = store.search(
                     area=args.area,
                     category=args.category,
                     limit=args.limit,
                     offset=args.offset,
                 )
+            else:
+                targets = {
+                    "publish": "published",
+                    "archive": "archived",
+                    "restore": "draft",
+                }
+                if args.command != "status":
+                    store.transition(args.service_id, targets[args.command])
+                print(
+                    json.dumps(
+                        {
+                            "service_id": args.service_id,
+                            "state": store.state(args.service_id),
+                        }
+                    )
+                )
+                return 0
             print(json.dumps([asdict(item) for item in results], indent=2))
     except (ValueError, sqlite3.Error) as error:
         parser.exit(2, f"repairnear: {error}\n")

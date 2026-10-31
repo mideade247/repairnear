@@ -178,3 +178,15 @@ Create an issue for each bounded task with its scope and acceptance criteria.
 Mark roadmap items complete only when the implementation and relevant checks
 are finished. Update remaining effort estimates as work progresses. Keep the
 README accurate about what works today and what is still planned.
+
+## Implemented local publication lifecycle
+
+The SQLite directory now supports draft, published and archived states. New and
+legacy records start as drafts. Public queries exclude drafts and archived records
+before pagination. Explicit local commands publish, archive, restore and inspect
+state. Migration, transition failure, persistence and CLI regression tests cover
+this feature. This completes the local state-management slice; protected web
+editing, source verification and editorial review remain outstanding.
+
+Next bounded task: add source and last-verified metadata with validation and
+persistence tests. This does not imply that any real service has been verified.

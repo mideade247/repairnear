@@ -36,6 +36,7 @@ with Directory("repairnear.sqlite3") as directory:
     directory.add(Listing(
         "example-1", "Fictional Cycle Workshop", "Example Town", "bicycle"
     ))
+    directory.transition("example-1", "published")
     print(directory.search(area="Example Town", category="bicycle"))
 ```
 
@@ -82,3 +83,27 @@ python -m detect_secrets scan | python scripts/check_secrets.py
 
 The secret check requires an initialised Git repository with the intended files
 staged or committed. It does not replace a history scan before publication.
+
+## Publication lifecycle
+
+New listings start as drafts. Public search returns only published listings,
+with publication filtering applied before pagination. Lifecycle changes are local
+editor operations, not a web authentication or authorisation system.
+
+```sh
+repairnear --database repairnear.sqlite3 status example-1
+repairnear --database repairnear.sqlite3 publish example-1
+repairnear --database repairnear.sqlite3 archive example-1
+repairnear --database repairnear.sqlite3 restore example-1
+```
+
+Allowed transitions are draft to published or archived, published to archived,
+and archived to draft. Restore returns a listing to draft; publication then needs
+an explicit action. Repeated or invalid transitions and unknown IDs return errors
+without changing data. `Directory.state()` inspects an exact service ID.
+
+Existing four-column databases migrate transactionally to schema version 1 on
+opening. Existing records are retained as drafts and must be reviewed before
+publishing. Back up an existing database before upgrading; older application
+versions cannot operate on the new schema. Unsupported schema versions are
+rejected. The demo explicitly publishes its fictional listings in memory.
